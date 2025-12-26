@@ -1,3 +1,15 @@
+import streamlit as st
+import pdfplumber
+import pandas as pd
+import re
+
+# --- ページ設定 ---
+st.set_page_config(page_title="納品書管理アプリ", layout="wide")
+
+st.title("📄 納品書データ化システム")
+st.markdown("PDFをアップロードすると、顧客名・住所・商品詳細（オプション含む）をすべて抽出します。")
+
+# --- データ抽出ロジック（修正版） ---
 def extract_data_from_pdf(file):
     # 初期値
     data = {
@@ -65,9 +77,6 @@ def extract_data_from_pdf(file):
                 # 2行目以降があれば、それをすべて結合して住所とする
                 if len(captured_lines) > 1:
                     data["お届け先住所"] = " ".join(captured_lines[1:])
-                else:
-                    # もし2行目が取れていなければ、郵便番号抽出などを試みる（予備策）
-                    pass
 
             # --- 3. 商品名の抽出 ---
             if tables:
@@ -84,7 +93,31 @@ def extract_data_from_pdf(file):
                 data["商品詳細"] = "\n".join(product_texts).strip()
 
     except Exception as e:
-        # エラー時は画面に表示せずログに残す（空データとして返す）
+        # エラー時は画面に表示せずログに残す
         print(f"Error reading {file.name}: {e}")
     
     return data
+
+# --- メイン画面の処理 ---
+uploaded_files = st.file_uploader("PDFファイルをここにドロップ", type="pdf", accept_multiple_files=True)
+
+if uploaded_files:
+    all_data = []
+    for file in uploaded_files:
+        all_data.append(extract_data_from_pdf(file))
+    
+    df = pd.DataFrame(all_data)
+    
+    if not df.empty:
+        # 表示列の指定（並び順）
+        cols = ["注文日", "注文ID", "顧客名", "お届け先住所", "商品詳細", "合計金額", "ファイル名"]
+        
+        # 存在しない列は除外して表示
+        show_cols = [c for c in cols if c in df.columns]
+        
+        st.success(f"{len(df)} 件のデータを抽出しました。")
+        st.dataframe(df[show_cols], use_container_width=True)
+        
+        # CSVダウンロード
+        csv = df[show_cols].to_csv(index=False).encode('utf-8_sig')
+        st.download_button("CSVダウンロード", data=csv, file_name="invoice_list_full.csv", mime="text/csv")
